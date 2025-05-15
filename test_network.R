@@ -130,7 +130,8 @@ save(activation_list, control_list, conflict_list, file = "data/activation_list.
 
 
 # LBA parameters (true values for simulation)
-v_base <- 1
+v_int <- 0
+v_scale <- 1
 A <- 0.5
 B <- 0.4
 b <- A + B
@@ -140,7 +141,8 @@ sv <- 0.2
 sim_full <- simulate_lba_from_states(
   states,
   stim_sequence,
-  v_base = v_base,
+  v_int = v_int,
+  v_scale = v_scale,
   A = A,
   B = B,
   t0 = t0,
@@ -304,7 +306,7 @@ ggsave("plots/full_dynamics_plot.png", final_plot, width = 15, height = 7, dpi =
 
 
 # Add drift rates for plotting against activations
-v_mat <- t(sapply(activation_list, function(a) v_base * a))  # n_trials x 4
+v_mat <- t(sapply(activation_list, function(a) v_int + v_scale * a))  # n_trials x 4
 colnames(v_mat) <- paste0("v_", c("dog", "bird", "cat", "fish"))
 df <- cbind(dat, v_mat)
 names(df)
@@ -386,7 +388,7 @@ ggsave("plots/full_dynamics_plot_vertical.png",
 
 # # Fit model ---------------------------------------------------------------
 # 
-# start_par <- c(v_base = 1, A = 0.3, B = 0.3, t0 = 0.25, sv = 0.2)
+# start_par <- c(v_int = 0.2, v_scale = 1, A = 0.3, B = 0.3, t0 = 0.25, sv = 0.2)
 # 
 # fit <- optim(
 #   par = start_par,
@@ -400,7 +402,7 @@ ggsave("plots/full_dynamics_plot_vertical.png",
 # fit$par  # Estimated parameters
 # fit$value  # Final negative log-likelihood
 # 
-# true_pars <- c(v_base = 1, A = 0.5, B = 0.4, t0 = 0.3, sv = 0.2)
+# true_pars <- c(v_int = 0.2, v_scale = 1, A = 0.5, B = 0.4, t0 = 0.3, sv = 0.2)
 # recovered_pars <- fit$par
 # round(rbind(True = true_pars, Recovered = recovered_pars), 3)
 # 
@@ -437,8 +439,8 @@ ggsave("plots/full_dynamics_plot_vertical.png",
 # }
 # 
 # par_bounds <- list(
-#   lower = c(v_base = 0.01, A = 0.1, B = 0.1, t0 = 0.1, sv = 0.01),
-#   upper = c(v_base = 5.0, A = 2.0, B = 2.0, t0 = 1.0, sv = 1.0)
+#   lower = c(v_int = 0, v_scale = 0.01, A = 0.1, B = 0.1, t0 = 0.1, sv = 0.01),
+#   upper = c(v_int = 5, v_scale = 5.00, A = 2.0, B = 2.0, t0 = 1.0, sv = 1.00)
 # )
 # 
 # fits <- fit_lba_multistart_parallel(
@@ -454,7 +456,7 @@ ggsave("plots/full_dynamics_plot_vertical.png",
 # # Extract parameter estimates from all valid fits
 # fit_params <- do.call(rbind, lapply(fits, function(fit) {
 #   out <- fit$par
-#   names(out) <- c("v_base", "A", "B", "t0", "sv")
+#   names(out) <- c("v_int, "v_scale", "A", "B", "t0", "sv")
 #   out
 # }))
 # fit_df <- as.data.frame(fit_params)
@@ -467,7 +469,7 @@ ggsave("plots/full_dynamics_plot_vertical.png",
 #   values_to = "estimate"
 # )
 # 
-# true_pars <- c(v_base = 1, A = 0.5, B = 0.4, t0 = 0.3, sv = 0.2)
+# true_pars <- c(v_int = 0.2, v_scale = 1, A = 0.5, B = 0.4, t0 = 0.3, sv = 0.2)
 # true_df <- data.frame(
 #   parameter = names(true_pars),
 #   true_value = as.numeric(true_pars)

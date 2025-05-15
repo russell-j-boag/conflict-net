@@ -188,7 +188,7 @@ make_weight_matrix <- function(n_units = 4, pos = 1, neg = -1) {
 ?fit
 
 simulate_lba_from_states <- function(states, stim_sequence,
-                                     v_base = 1, A = 0.5, B = 0.5, t0 = 0.3, sv = 0.2) {
+                                    v_int = 0.2, v_scale = 1, A = 0.5, B = 0.5, t0 = 0.3, sv = 0.2) {
   # Check dimensions
   if (length(states) != nrow(stim_sequence) + 1) {
     stop("Number of states should be one more than the number of trials.")
@@ -200,7 +200,7 @@ simulate_lba_from_states <- function(states, stim_sequence,
   conflict_list <- lapply(states[-1], function(s) s$conflict)
   
   # Convert to drift matrix
-  v_mat <- t(sapply(activation_list, function(a) v_base * a))  # n_trials x n_acc
+  v_mat <- t(sapply(activation_list, function(a) v_int + v_scale * a))  # n_trials x n_acc
   n_acc <- ncol(v_mat)
   n_trials <- nrow(v_mat)
   b <- A + B
@@ -253,11 +253,12 @@ simulate_lba_from_states <- function(states, stim_sequence,
 # LBA likelihood function
 library(rtdists)
 neg_log_lik <- function(par, trial_data, activation_list) {
-  v_base <- par[1]
-  A      <- par[2]
-  B      <- par[3]
-  t0     <- par[4]
-  sv_val <- par[5]
+  v_int   <- par[1]
+  v_scale <- par[2]
+  A       <- par[3]
+  B       <- par[4]
+  t0      <- par[5]
+  sv_val  <- par[6]
   
   if (any(!is.finite(par)) || any(par <= 0)) return(1e6)
   
@@ -270,7 +271,7 @@ neg_log_lik <- function(par, trial_data, activation_list) {
     resp <- trial_data$response[i]
     act  <- activation_list[[i]]
     
-    mean_v <- v_base * act
+    mean_v <- v_int + v_scale * act
     b <- rep(b_val, 4)
     sv <- rep(sv_val, 4)
     
