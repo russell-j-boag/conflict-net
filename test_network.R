@@ -53,6 +53,7 @@ aO <- nOd <- nOt <- aHd <- aHt <- nHt <- nHd <- bHt <- rep(0, 4)
 
 # Control
 control <- c(dog = 0, bird = 0, cat = 0, fish = 0)
+conflict <- 0
 
 # Make network list
 nn <- list(wOt=wOt,wOd=wOd, # Output weight matrices
@@ -61,11 +62,12 @@ nn <- list(wOt=wOt,wOd=wOd, # Output weight matrices
            wTd=wTd,wTt=wTt, # Task weight vector
            activation_fun=plogis)  # Hidden output function
 
-state <- list(aO=aO,           # Output activation vector
-              nOt=nOt,nOd=nOd, # Output net vectors
-              aHd=aHd,aHt=aHt, # Hidden activation vectors
-              nHt=nHt,nHd=nHd, # Hidden net vectors
-              control=control) # Control values
+state <- list(aO=aO,             # Output activation vector
+              nOt=nOt,nOd=nOd,   # Output net vectors
+              aHd=aHd,aHt=aHt,   # Hidden activation vectors
+              nHt=nHt,nHd=nHd,   # Hidden net vectors
+              conflict=conflict, # Conflict values
+              control=control)   # Control values
 state0 <- state
 
 
@@ -84,7 +86,7 @@ between_update(stimulus, state, nn, stim_lookup = stim_lookup, print_conflict = 
 
 # Make distractors
 set.seed(8)
-n_per_target <- 500
+n_per_target <- 50
 
 # Define targets
 targets <- rep(c("dog", "bird", "cat", "fish"), each = n_per_target)
@@ -123,7 +125,8 @@ states
 # Skip the initial state (index 1), extract aO from each trial
 activation_list <- lapply(states[-1], function(s) s$aO)
 control_list <- lapply(states[-1], function(s) s$control)
-save(activation_list, control_list, file = "data/activation_list.RData")
+conflict_list <- lapply(states[-1], function(s) s$conflict)
+save(activation_list, control_list, conflict_list, file = "data/activation_list.RData")
 
 
 # LBA parameters (true values for simulation)
@@ -177,7 +180,7 @@ unit_levels <- c("dog", "bird", "cat", "fish")
 df <- dat %>%
   mutate(
     acc_numeric = as.numeric(correct),
-    acc_ma = rollmean(acc_numeric, k = 5, fill = NA, align = "center")
+    acc_ma = rollmean(acc_numeric, k = 15, fill = NA, align = "center")
   )
 
 response_labels <- c("dog", "bird", "cat", "fish")
@@ -203,7 +206,7 @@ p_acc <- ggplot(df, aes(x = trial)) +
             alpha = 0.15, inherit.aes = FALSE) +
   geom_point(aes(y = acc_numeric, color = response_label), size = 2.5, alpha = 0.8) +  # 🔁 changed from `correct` to `target`
   geom_line(aes(y = acc_numeric), alpha = 0.3) +
-  geom_line(aes(y = acc_ma), color = "black", linewidth = 1, linetype = "solid", alpha = 0.5) +
+  geom_line(aes(y = acc_ma), color = "#d95f02", linewidth = 1, linetype = "solid", alpha = 0.8) +
   geom_hline(yintercept = mean_acc, color = "black", linetype = "dashed", linewidth = 1, alpha = 0.5) +
   annotate("text",
            x = -Inf, y = -Inf,
@@ -266,8 +269,33 @@ p_ctrl <- ggplot(ctrl_long, aes(x = trial, y = control, color = unit)) +
   geom_line(linewidth = 0.8, alpha = 0.8) +
   scale_color_manual(values = unit_colors) +
   scale_fill_manual(values = c(`TRUE` = "white", `FALSE` = "lightcoral"), guide = "none") +
-  labs(title = "Control Signals", x = "Trial", y = "Control Level", color = "Unit") +
-  theme_minimal()
+  labs(title = "Control Signals", x = "Trial", y = "Control", color = "Unit") +
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "white", color = NA),  # Set panel background to white
+    plot.background = element_rect(fill = "white", color = NA)    # Optional: set full plot background to white
+  )
+# ggsave("plots/control_no_decay.png", p_ctrl, width = 9, height = 3, dpi = 300)
+ggsave("plots/control_decay.png", p_ctrl, width = 9, height = 3, dpi = 300)
+
+
+# Plot conflict signal
+df$conflict_ma <- zoo::rollmean(df$conflict, k = 15, fill = NA, align = "center")
+
+p_conflict <- ggplot(df, aes(x = trial, y = conflict)) +
+  geom_rect(data = band_df,
+            aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = congruent),
+            alpha = 0.15, inherit.aes = FALSE) +
+  geom_line(linewidth = 0.8, alpha = 0.8, color = "black") +  # raw conflict
+  geom_line(aes(y = conflict_ma), color = "#d95f02", alpha = 0.8, linewidth = 1, na.rm = TRUE) +  # moving average
+  scale_fill_manual(values = c(`TRUE` = "white", `FALSE` = "lightcoral"), guide = "none") +
+  labs(title = "Conflict Signal", x = "Trial", y = "Conflict") +
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+p_conflict 
 
 (p_acc + p_rt) / (p_act + p_ctrl)
 
@@ -314,15 +342,26 @@ ggsave("plots/drift_activations_plot.png", drift_activations_plot, width = 15, h
 library(patchwork)
 
 # Remove x-axis elements from upper plots
-p_acc_clean <- p_acc + theme(axis.title.x = element_blank(),
-                             axis.text.x  = element_blank(),
-                             axis.ticks.x = element_blank())
-p_rt_clean  <- p_rt  + theme(axis.title.x = element_blank(),
-                             axis.text.x  = element_blank(),
-                             axis.ticks.x = element_blank())
-p_act_clean <- p_act + theme(axis.title.x = element_blank(),
-                             axis.text.x  = element_blank(),
-                             axis.ticks.x = element_blank())
+p_acc_clean <- p_acc + theme(
+  axis.title.x = element_blank(),
+  axis.text.x  = element_blank(),
+  axis.ticks.x = element_blank()
+)
+p_rt_clean  <- p_rt  + theme(
+  axis.title.x = element_blank(),
+  axis.text.x  = element_blank(),
+  axis.ticks.x = element_blank()
+)
+p_conflicty_clean <- p_conflict + theme(
+  axis.title.x = element_blank(),
+  axis.text.x  = element_blank(),
+  axis.ticks.x = element_blank()
+)
+p_act_clean <- p_act + theme(
+  axis.title.x = element_blank(),
+  axis.text.x  = element_blank(),
+  axis.ticks.x = element_blank()
+)
 # Keep x-axis on bottom plot only
 p_ctrl_clean <- p_ctrl
 
@@ -330,11 +369,13 @@ p_ctrl_clean <- p_ctrl
 final_plot_vertical <- (
   p_acc_clean /
     p_rt_clean /
+    p_conflicty_clean /
     p_act_clean /
     p_ctrl_clean
 ) +
-  plot_layout(guides = "collect", heights = c(1, 1, 1, 1)) & 
+  plot_layout(guides = "collect", heights = c(1, 1, 1, 1, 1)) & 
   theme(plot.margin = margin(5, 10, 5, 10))  # optional consistent margin
+final_plot_vertical
 
 # Save
 ggsave("plots/full_dynamics_plot_vertical.png",
@@ -343,121 +384,121 @@ ggsave("plots/full_dynamics_plot_vertical.png",
 
 
 
-# Fit model ---------------------------------------------------------------
-
-start_par <- c(v_base = 1, A = 0.3, B = 0.3, t0 = 0.25, sv = 0.2)
-
-fit <- optim(
-  par = start_par,
-  fn = neg_log_lik,
-  method = "Nelder-Mead",  # Or try "L-BFGS-B" with bounds
-  trial_data = dat,
-  activation_list = activation_list,
-  control = list(maxit = 5000)
-)
-
-fit$par  # Estimated parameters
-fit$value  # Final negative log-likelihood
-
-true_pars <- c(v_base = 1, A = 0.5, B = 0.4, t0 = 0.3, sv = 0.2)
-recovered_pars <- fit$par
-round(rbind(True = true_pars, Recovered = recovered_pars), 3)
-
-
-library(parallel)
-
-fit_lba_multistart_parallel <- function(n_starts, par_bounds, trial_data, activation_list, seed = 1) {
-  set.seed(seed)
-  
-  start_list <- replicate(n_starts, runif(5, min = par_bounds$lower, max = par_bounds$upper), simplify = FALSE)
-  
-  fits <- mclapply(seq_len(n_starts), function(i) {
-    start_par <- start_list[[i]]
-    fit <- tryCatch(
-      optim(
-        par = start_par,
-        fn = neg_log_lik,
-        method = "L-BFGS-B",
-        lower = par_bounds$lower,
-        upper = par_bounds$upper,
-        trial_data = trial_data,
-        activation_list = activation_list,
-        control = list(maxit = 5000)
-      ),
-      error = function(e) NULL
-    )
-    if (!is.null(fit)) fit$start <- start_par
-    return(fit)
-  }, mc.cores = detectCores() - 1)
-  
-  # Filter successful fits
-  valid_fits <- Filter(function(x) !is.null(x) && is.finite(x$value), fits)
-  return(valid_fits)
-}
-
-par_bounds <- list(
-  lower = c(v_base = 0.01, A = 0.1, B = 0.1, t0 = 0.1, sv = 0.01),
-  upper = c(v_base = 5.0, A = 2.0, B = 2.0, t0 = 1.0, sv = 1.0)
-)
-
-fits <- fit_lba_multistart_parallel(
-  n_starts = 10,
-  par_bounds = par_bounds,
-  trial_data = dat,
-  activation_list = activation_list
-)
-
-likelihoods <- sapply(fits, function(fit) fit$value)
-best_idx <- which.min(likelihoods)
-
-# Extract parameter estimates from all valid fits
-fit_params <- do.call(rbind, lapply(fits, function(fit) {
-  out <- fit$par
-  names(out) <- c("v_base", "A", "B", "t0", "sv")
-  out
-}))
-fit_df <- as.data.frame(fit_params)
-fit_df$fit_id <- seq_len(nrow(fit_df))
-
-fit_long <- pivot_longer(
-  fit_df,
-  cols = -fit_id,
-  names_to = "parameter",
-  values_to = "estimate"
-)
-
-true_pars <- c(v_base = 1, A = 0.5, B = 0.4, t0 = 0.3, sv = 0.2)
-true_df <- data.frame(
-  parameter = names(true_pars),
-  true_value = as.numeric(true_pars)
-)
-
-ggplot(fit_long, aes(x = parameter, y = estimate)) +
-  geom_jitter(width = 0.1, height = 0, alpha = 0.6, color = "steelblue") +
-  geom_point(data = true_df, aes(x = parameter, y = true_value),
-             color = "red", shape = 18, size = 3) +
-  labs(title = "Parameter Recovery Across Multi-Start Fits",
-       y = "Estimated Value", x = "Parameter") +
-  theme_minimal()
-
-# Merge fit estimates with true values
-fit_errors <- fit_long %>%
-  left_join(true_df, by = "parameter") %>%
-  mutate(error = estimate - true_value)
-
-fit_errors %>%
-  group_by(parameter) %>%
-  summarise(
-    mean_error = mean(error),
-    sd_error   = sd(error),
-    min_error  = min(error),
-    max_error  = max(error)
-  )
-
-ggplot(fit_errors, aes(x = parameter, y = error)) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
-  geom_jitter(width = 0.1, height = 0, alpha = 0.6, color = "darkorange") +
-  geom_boxplot(width = 0.3, outlier.shape = NA, fill = "gray90", alpha = 0.5) +
-  labs(title = "Parameter Estimation Errors Across Fits",
-       y = "Error (Estimate - True Value)", x = "Parameter") +
-  theme_minimal()
+# # Fit model ---------------------------------------------------------------
+# 
+# start_par <- c(v_base = 1, A = 0.3, B = 0.3, t0 = 0.25, sv = 0.2)
+# 
+# fit <- optim(
+#   par = start_par,
+#   fn = neg_log_lik,
+#   method = "Nelder-Mead",  # Or try "L-BFGS-B" with bounds
+#   trial_data = dat,
+#   activation_list = activation_list,
+#   control = list(maxit = 5000)
+# )
+# 
+# fit$par  # Estimated parameters
+# fit$value  # Final negative log-likelihood
+# 
+# true_pars <- c(v_base = 1, A = 0.5, B = 0.4, t0 = 0.3, sv = 0.2)
+# recovered_pars <- fit$par
+# round(rbind(True = true_pars, Recovered = recovered_pars), 3)
+# 
+# 
+# library(parallel)
+# 
+# fit_lba_multistart_parallel <- function(n_starts, par_bounds, trial_data, activation_list, seed = 1) {
+#   set.seed(seed)
+#   
+#   start_list <- replicate(n_starts, runif(5, min = par_bounds$lower, max = par_bounds$upper), simplify = FALSE)
+#   
+#   fits <- mclapply(seq_len(n_starts), function(i) {
+#     start_par <- start_list[[i]]
+#     fit <- tryCatch(
+#       optim(
+#         par = start_par,
+#         fn = neg_log_lik,
+#         method = "L-BFGS-B",
+#         lower = par_bounds$lower,
+#         upper = par_bounds$upper,
+#         trial_data = trial_data,
+#         activation_list = activation_list,
+#         control = list(maxit = 5000)
+#       ),
+#       error = function(e) NULL
+#     )
+#     if (!is.null(fit)) fit$start <- start_par
+#     return(fit)
+#   }, mc.cores = detectCores() - 1)
+#   
+#   # Filter successful fits
+#   valid_fits <- Filter(function(x) !is.null(x) && is.finite(x$value), fits)
+#   return(valid_fits)
+# }
+# 
+# par_bounds <- list(
+#   lower = c(v_base = 0.01, A = 0.1, B = 0.1, t0 = 0.1, sv = 0.01),
+#   upper = c(v_base = 5.0, A = 2.0, B = 2.0, t0 = 1.0, sv = 1.0)
+# )
+# 
+# fits <- fit_lba_multistart_parallel(
+#   n_starts = 10,
+#   par_bounds = par_bounds,
+#   trial_data = dat,
+#   activation_list = activation_list
+# )
+# 
+# likelihoods <- sapply(fits, function(fit) fit$value)
+# best_idx <- which.min(likelihoods)
+# 
+# # Extract parameter estimates from all valid fits
+# fit_params <- do.call(rbind, lapply(fits, function(fit) {
+#   out <- fit$par
+#   names(out) <- c("v_base", "A", "B", "t0", "sv")
+#   out
+# }))
+# fit_df <- as.data.frame(fit_params)
+# fit_df$fit_id <- seq_len(nrow(fit_df))
+# 
+# fit_long <- pivot_longer(
+#   fit_df,
+#   cols = -fit_id,
+#   names_to = "parameter",
+#   values_to = "estimate"
+# )
+# 
+# true_pars <- c(v_base = 1, A = 0.5, B = 0.4, t0 = 0.3, sv = 0.2)
+# true_df <- data.frame(
+#   parameter = names(true_pars),
+#   true_value = as.numeric(true_pars)
+# )
+# 
+# ggplot(fit_long, aes(x = parameter, y = estimate)) +
+#   geom_jitter(width = 0.1, height = 0, alpha = 0.6, color = "steelblue") +
+#   geom_point(data = true_df, aes(x = parameter, y = true_value),
+#              color = "red", shape = 18, size = 3) +
+#   labs(title = "Parameter Recovery Across Multi-Start Fits",
+#        y = "Estimated Value", x = "Parameter") +
+#   theme_minimal()
+# 
+# # Merge fit estimates with true values
+# fit_errors <- fit_long %>%
+#   left_join(true_df, by = "parameter") %>%
+#   mutate(error = estimate - true_value)
+# 
+# fit_errors %>%
+#   group_by(parameter) %>%
+#   summarise(
+#     mean_error = mean(error),
+#     sd_error   = sd(error),
+#     min_error  = min(error),
+#     max_error  = max(error)
+#   )
+# 
+# ggplot(fit_errors, aes(x = parameter, y = error)) +
+#   geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+#   geom_jitter(width = 0.1, height = 0, alpha = 0.6, color = "darkorange") +
+#   geom_boxplot(width = 0.3, outlier.shape = NA, fill = "gray90", alpha = 0.5) +
+#   labs(title = "Parameter Estimation Errors Across Fits",
+#        y = "Error (Estimate - True Value)", x = "Parameter") +
+#   theme_minimal()

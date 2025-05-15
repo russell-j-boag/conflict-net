@@ -4,7 +4,18 @@
 net <- function(W,ia) W %*% ia
 
 # Calculate conflict
-get_conflict <- function(aO,nd) -sum(aO*nd)  
+# get_conflict <- function(aO,nd) -sum(aO*nd)  
+get_conflict <- function(aO, nd) {
+  dot_product <- sum(aO * nd)
+  norm_aO <- sqrt(sum(aO^2))
+  norm_nd <- sqrt(sum(nd^2))
+  # Cosine similarity
+  cosine_similarity <- dot_product / (norm_aO * norm_nd)
+  # Negative of cosine similarity
+  conflict <- cosine_similarity - 1
+  return(conflict)
+}
+
 
 # Control function
 control_update <- function(control_val, conflict,
@@ -21,7 +32,7 @@ decay_non_target_activation <- function(aO, target_id, decay_rate) {
 # Between-trial update
 between_update <- function(stimulus, state, nn,
                            lambda = 0.5, alpha = 0.8, 
-                           activation_decay = 0.15,
+                           activation_decay = 0,
                            control_decay = 0.15,
                            stim_lookup,
                            print_conflict = FALSE) 
@@ -68,6 +79,7 @@ between_update <- function(stimulus, state, nn,
   
   # Compute conflict
   conflict <- get_conflict(state$aO, state$aHd)
+  state$conflict <- conflict
   if (print_conflict) print(conflict)
   
   # Passive decay for non-target items
@@ -173,7 +185,7 @@ make_weight_matrix <- function(n_units = 4, pos = 1, neg = -1) {
   diag(mat) <- pos
   return(mat)
 }
-
+?fit
 
 simulate_lba_from_states <- function(states, stim_sequence,
                                      v_base = 1, A = 0.5, B = 0.5, t0 = 0.3, sv = 0.2) {
@@ -185,6 +197,7 @@ simulate_lba_from_states <- function(states, stim_sequence,
   # Drop initial state and extract activations and controls
   activation_list <- lapply(states[-1], function(s) s$aO)
   control_list    <- lapply(states[-1], function(s) s$control)
+  conflict_list <- lapply(states[-1], function(s) s$conflict)
   
   # Convert to drift matrix
   v_mat <- t(sapply(activation_list, function(a) v_base * a))  # n_trials x n_acc
@@ -223,13 +236,15 @@ simulate_lba_from_states <- function(states, stim_sequence,
   # Convert activation/control lists to matrices
   activation_matrix <- do.call(rbind, lapply(activation_list, as.numeric))
   control_matrix    <- do.call(rbind, lapply(control_list, as.numeric))
+  conflict_matrix    <- do.call(rbind, lapply(conflict_list, as.numeric))
   
   # Name columns
   colnames(activation_matrix) <- paste0("act_", names(stim_map))
   colnames(control_matrix)    <- paste0("ctrl_", names(stim_map))
+  colnames(conflict_matrix) <- "conflict"
   
   # Add to sim_full
-  sim_full <- cbind(sim_full, activation_matrix, control_matrix)
+  sim_full <- cbind(sim_full, conflict_matrix, control_matrix, activation_matrix)
   
   return(sim_full)
 }
